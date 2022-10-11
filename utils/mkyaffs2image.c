@@ -41,10 +41,18 @@ unsigned yaffs_trace_mask=0;
 #define MAX_OBJECTS 10000
 
 // Adjust these to match your NAND LAYOUT:
-#define chunkSize 2048
+//#define chunkSize (2048)
 #define spareSize 64
 #define pagesPerBlock 64
 
+#define inbandSize 16
+#define inbandtag
+
+#ifdef inbandtag
+#define chunkSize 2032
+#else
+#define chunkSize 2048
+#endif
 
 
 typedef struct
@@ -189,9 +197,13 @@ static void little_to_big_endian(struct yaffs_ext_tags *tagsPtr)
 
 static void shuffle_oob(char *spareData, struct yaffs_packed_tags2 *pt)
 {
+#ifndef inbandtag
 	assert(sizeof(*pt) <= spareSize);
 	// NAND LAYOUT: For non-trivial OOB orderings, here would be a good place to shuffle.
 	memcpy(spareData, pt, sizeof(*pt));
+#else
+	memcpy(spareData, &pt->t, sizeof(pt->t));
+#endif
 }
 
 static int write_chunk(u8 *data, u32 id, u32 chunk_id, u32 n_bytes)
@@ -224,6 +236,8 @@ static int write_chunk(u8 *data, u32 id, u32 chunk_id, u32 n_bytes)
 	nPages++;
 
 	memset(&pt, 0, sizeof(pt));
+
+#ifndef inbandtag
 	yaffs_pack_tags2(&dummy_dev, &pt,&t,1);
 
 	memset(spareData, 0xff, sizeof(spareData));
@@ -231,6 +245,15 @@ static int write_chunk(u8 *data, u32 id, u32 chunk_id, u32 n_bytes)
 
 	if (write(outFile,spareData,sizeof(spareData)) != sizeof(spareData))
 		fatal("write");
+#else
+        yaffs_pack_tags2(&dummy_dev, &pt,&t,1);
+
+        memset(spareData, 0xff, inbandSize);
+        shuffle_oob(spareData, &pt);
+
+        if (write(outFile,spareData,inbandSize) != inbandSize)
+                fatal("write");	
+#endif
 	return 0;
 }
 
